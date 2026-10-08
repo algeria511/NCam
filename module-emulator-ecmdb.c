@@ -112,6 +112,27 @@ static void secure_zero(void *ptr, size_t len)
     while (len--) *p++ = 0;
 }
 
+static inline int hex_nibble(char c)
+{
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    return -1;
+}
+
+static inline int hex_decode(const char *src, uint8_t *dst, size_t nbytes)
+{
+    size_t i;
+    for (i = 0; i < nbytes; i++)
+    {
+        int hi = hex_nibble(src[i * 2]);
+        int lo = hex_nibble(src[i * 2 + 1]);
+        if (hi < 0 || lo < 0) return 0;
+        dst[i] = (uint8_t)((hi << 4) | lo);
+    }
+    return 1;
+}
+
 // Filename Parser
 static int parse_channel_filename(const char *filename, uint16_t *caid, 
                                    uint16_t *srvid, uint8_t *start, uint8_t *end)
@@ -159,13 +180,8 @@ static int parse_ecm_line(const char *line, uint8_t *ecm, uint8_t *cw,
     if (*ecm_len > ECMDB_MAX_ECM_LEN)
         return 0;
     
-    for (size_t i = 0; i < *ecm_len; i++)
-    {
-        unsigned int byte;
-        if (sscanf(line + i * 2, "%2x", &byte) != 1)
-            return 0;
-        ecm[i] = (uint8_t)byte;
-    }
+    if (!hex_decode(line, ecm, *ecm_len))
+        return 0;
     
     const char *cw_start = cw_marker + 5;
     while (*cw_start == ' ' || *cw_start == '\t') cw_start++;
@@ -173,13 +189,8 @@ static int parse_ecm_line(const char *line, uint8_t *ecm, uint8_t *cw,
     if (cs_strlen(cw_start) < ECMDB_CW_LEN * 2)
         return 0;
     
-    for (size_t i = 0; i < ECMDB_CW_LEN; i++)
-    {
-        unsigned int byte;
-        if (sscanf(cw_start + i * 2, "%2x", &byte) != 1)
-            return 0;
-        cw[i] = (uint8_t)byte;
-    }
+    if (!hex_decode(cw_start, cw, ECMDB_CW_LEN))
+        return 0;
     
     return 1;
 }

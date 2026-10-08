@@ -332,7 +332,11 @@ endif
 
 BINDIR := Distribution
 override BUILD_DIR := build
+ifeq ($(BUILD_TESTS),1)
+OBJDIR := $(BUILD_DIR)/tests-$(TARGET)
+else
 OBJDIR := $(BUILD_DIR)/$(TARGET)
+endif
 
 # Include config.mak which contains variables for all enabled modules
 # These variables will be used to select only needed files for compilation
@@ -554,7 +558,7 @@ SRC := $(subst config.c,$(OBJDIR)/config.c,$(SRC))
 # starts the compilation.
 all:
 	@./config.sh --use-flags "$(USE_FLAGS)" --objdir "$(OBJDIR)" --make-config.mak
-	@-mkdir -p $(OBJDIR)/cscrypt $(OBJDIR)/csctapi $(OBJDIR)/minilzo $(OBJDIR)/webif $(OBJDIR)/signing
+	@-mkdir -p $(OBJDIR)/cscrypt $(OBJDIR)/csctapi $(OBJDIR)/minilzo $(OBJDIR)/webif $(OBJDIR)/signing Distribution
 	@-printf "\
 +-------------------------------------------------------------------------------\n\
 | NCam ver: $(VER) rev: $(REV) target: $(TARGET)\n\

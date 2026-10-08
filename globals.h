@@ -325,11 +325,21 @@ typedef uint8_t uint8_t;
 
 #define SAFE_MUTEX_INIT_R(a,b,c)                  SAFE_PTHREAD_2ARG_R(pthread_mutex_init, a, b, cs_log, c)
 #define SAFE_COND_INIT_R(a,b,c)                   SAFE_PTHREAD_2ARG_R(pthread_cond_init, a, b, cs_log, c)
-#define SAFE_CONDATTR_SETCLOCK_R(a,b,c)           SAFE_PTHREAD_2ARG(pthread_condattr_setclock, a, b, cs_log, c)
+#define SAFE_CONDATTR_SETCLOCK_R(a,b,c) { \
+	int32_t pter = pthread_condattr_setclock((a), (b)); \
+	if(pter != 0) \
+	{ \
+		cs_log("FATAL ERROR: pthread_condattr_setclock() failed in %s (called from %s) with error %d %s\n", __func__, (c), pter, strerror(pter)); \
+	} }
 
 #define SAFE_MUTEX_INIT_NOLOG_R(a,b,c)            SAFE_PTHREAD_2ARG_R(pthread_mutex_init, a, b, fprintf_stderr, c)
 #define SAFE_COND_INIT_NOLOG_R(a,b,c)             SAFE_PTHREAD_2ARG_R(pthread_cond_init, a, b, fprintf_stderr, c)
-#define SAFE_CONDATTR_SETCLOCK_NOLOG_R(a,b,c)     SAFE_PTHREAD_2ARG(pthread_condattr_setclock, a, b, fprintf_stderr, c)
+#define SAFE_CONDATTR_SETCLOCK_NOLOG_R(a,b,c) { \
+	int32_t pter = pthread_condattr_setclock((a), (b)); \
+	if(pter != 0) \
+	{ \
+		fprintf_stderr("FATAL ERROR: pthread_condattr_setclock() failed in %s (called from %s) with error %d %s\n", __func__, (c), pter, strerror(pter)); \
+	} }
 
 #define SAFE_COND_TIMEDWAIT(a, b, c) { \
 	int32_t pter; \
@@ -725,10 +735,13 @@ typedef struct cs_mutexlock
 {
 	int32_t         timeout;
 	pthread_mutex_t lock;
-	pthread_cond_t  writecond, readcond;
+	pthread_cond_t  writecond, readcond, destroycond;
 	const char      *name;
 	int8_t          flag;
+	int8_t          destroying;
 	int16_t         writelock, readlock;
+	int16_t         waiting_writers;
+	int16_t         users;
 } CS_MUTEX_LOCK;
 
 #include "ncam-llist.h"
@@ -898,6 +911,7 @@ typedef struct v_ban                    // Failban listmember
 	bool            acosc_entry;
 	int32_t         acosc_penalty_dur;
 	char            *info;
+	bool            blocked_logged;
 } V_BAN;
 
 typedef struct s_cacheex_stat_entry     // Cacheex stats listmember
@@ -1638,6 +1652,7 @@ struct s_reader
 	struct s_client *client;                        // pointer to 'r'client this reader is running in
 	LLIST           *ll_entitlements;               // entitlements
 	int8_t          enable;
+	uint8_t         restart_pending;
 	int8_t          active;
 	int8_t          for_demux;                      // set demux number for which use this reader
 	int8_t          dropbadcws;                     // Schlocke: 1=drops cw if checksum is wrong. 0=fix checksum (default)

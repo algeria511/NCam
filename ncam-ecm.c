@@ -868,7 +868,7 @@ static void *cw_process(void)
 		msec_wait = 0;
 
 		cs_ftime(&t_now);
-		cs_readlock(__func__, &ecmcache_lock);
+		cs_writelock(__func__, &ecmcache_lock);
 		for(er = ecmcwcache; er; er = er->next)
 		{
 
@@ -948,7 +948,7 @@ static void *cw_process(void)
 					{ next_check = time_to_check_ctimeout; }
 			}
 		}
-		cs_readunlock(__func__, &ecmcache_lock);
+		cs_writeunlock(__func__, &ecmcache_lock);
 #ifdef CS_ANTICASC
 		if(cfg.ac_enabled && (ac_next = comp_timeb(&ac_time, &t_now)) <= 10)
 		{
@@ -962,14 +962,14 @@ static void *cw_process(void)
 			uint32_t count = 0;
 			struct ecm_request_t *ecm, *ecmt = NULL, *prv;
 
-			cs_readlock(__func__, &ecmcache_lock);
+			cs_writelock(__func__, &ecmcache_lock);
 			for(ecm = ecmcwcache, prv = NULL; ecm; prv = ecm, ecm = ecm->next, count++)
 			{
 				ecm_maxcachetime = t_now.time - ((cfg.ctimeout + 500) / 1000 + 3); // to be sure no more access er!
 
 				if(ecm->tps.time < ecm_maxcachetime)
 				{
-					cs_readunlock(__func__, &ecmcache_lock);
+					cs_writeunlock(__func__, &ecmcache_lock);
 					cs_writelock(__func__, &ecmcache_lock);
 					ecmt = ecm;
 					if(prv)
@@ -981,7 +981,7 @@ static void *cw_process(void)
 				}
 			}
 			if(!ecmt)
-				{ cs_readunlock(__func__, &ecmcache_lock); }
+				{ cs_writeunlock(__func__, &ecmcache_lock); }
 			ecmcwcache_size = count;
 
 			while(ecmt)
@@ -1251,7 +1251,7 @@ void cleanup_ecmtasks(struct s_client *cl)
 	ECM_REQUEST *ecm;
 
 	// remove this clients ecm from queue. because of cache, just null the client:
-	cs_readlock(__func__, &ecmcache_lock);
+	cs_writelock(__func__, &ecmcache_lock);
 	for(ecm = ecmcwcache; ecm && cl; ecm = ecm->next)
 	{
 		if(ecm->client == cl)
@@ -1259,10 +1259,10 @@ void cleanup_ecmtasks(struct s_client *cl)
 			ecm->client = NULL;
 		}
 	}
-	cs_readunlock(__func__, &ecmcache_lock);
+	cs_writeunlock(__func__, &ecmcache_lock);
 
 	// remove client from rdr ecm-queue:
-	cs_readlock(__func__, &readerlist_lock);
+	cs_writelock(__func__, &readerlist_lock);
 	struct s_reader *rdr = first_active_reader;
 	while(rdr)
 	{
@@ -1280,7 +1280,7 @@ void cleanup_ecmtasks(struct s_client *cl)
 		}
 		rdr = rdr->next;
 	}
-	cs_readunlock(__func__, &readerlist_lock);
+	cs_writeunlock(__func__, &readerlist_lock);
 
 }
 
@@ -2356,15 +2356,17 @@ static void write_ecm_cw_log(struct s_reader *reader, ECM_REQUEST *er, uint8_t *
     flockfile(file);
 
     // Write ECM bytes in specified range
-    for (uint8_t i = range_start; i < range_end; i++)
+    uint8_t i;
+    for (i = range_start; i < range_end; i++)
         fprintf(file, "%02X", er->ecm[i]);
 
     // Write separator
     fprintf(file, " #CW ");
 
     // Write complete CW (16 bytes)
-    for (int i = 0; i < CW_LENGTH; i++)
-        fprintf(file, "%02X", cw[i]);
+    int j;
+    for (j = 0; j < CW_LENGTH; j++)
+        fprintf(file, "%02X", cw[j]);
 
     fprintf(file, "\n");
     fflush(file);
@@ -3498,7 +3500,7 @@ void get_cw(struct s_client *client, ECM_REQUEST *er)
 	struct s_ecm_answer *ea, *prv = NULL;
 	struct s_reader *rdr;
 
-	cs_readlock(__func__, &readerlist_lock);
+	cs_writelock(__func__, &readerlist_lock);
 	cs_readlock(__func__, &clientlist_lock);
 
 	for(rdr = first_active_reader; rdr; rdr = rdr->next)
@@ -3554,7 +3556,7 @@ void get_cw(struct s_client *client, ECM_REQUEST *er)
 
 OUT:
 	cs_readunlock(__func__, &clientlist_lock);
-	cs_readunlock(__func__, &readerlist_lock);
+	cs_writeunlock(__func__, &readerlist_lock);
 
 	lb_set_best_reader(er);
 
@@ -3847,11 +3849,21 @@ int32_t ecmfmt(char *result, size_t size, uint16_t caid, uint16_t onid, uint32_t
 		switch(type)
 		{
 			case ECMFMT_NUMBER:
-				s += snprintf(result + s, size - s, ifmt, ivalue);
-				break;
-
 			case ECMFMT_STRING:
-				s += snprintf(result + s, size - s , sfmt != NULL ? sfmt : "%s", svalue);
+			{
+				if(s >= size)
+					break;
+				size_t remain = size - s;
+				int32_t wrote = (type == ECMFMT_NUMBER)
+					? snprintf(result + s, remain, ifmt, ivalue)
+					: snprintf(result + s, remain, sfmt != NULL ? sfmt : "%s", svalue);
+				if(wrote < 0)
+					break;
+				if((size_t)wrote >= remain)
+					{ s = size ? size - 1 : 0; }
+				else
+					{ s += (size_t)wrote; }
+			}
 				break;
 
 			case ECMFMT_CHAR:

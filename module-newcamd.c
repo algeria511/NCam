@@ -106,7 +106,7 @@ static int32_t network_message_send(int32_t handle, uint16_t *netMsgId, uint8_t 
 
 	head_size = (cl->ncd_proto == NCD_524) ? 8 : 12;
 
-	if(len < 3 || len + head_size > CWS_NETMSGSIZE || handle < 0)
+	if(!buffer || len < 3 || len + head_size > CWS_NETMSGSIZE || handle < 0)
 	{
 		return -1;
 	}
@@ -373,15 +373,15 @@ static int32_t network_message_receive(int32_t handle, uint16_t *netMsgId, uint8
 
 	if(cl->ncd_proto == NCD_AUTO)
 	{
-		// auto detect
-		int32_t l5 = (((netbuf[13] & 0x0F) << 8) | netbuf[14]) + 3;
-		int32_t l4 = (((netbuf[9] & 0x0F) << 8) | netbuf[10]) + 3;
+		int32_t l5 = -1, l4 = -1;
+		if(len >= 15) { l5 = (((netbuf[13] & 0x0F) << 8) | netbuf[14]) + 3; }
+		if(len >= 11) { l4 = (((netbuf[9] & 0x0F) << 8) | netbuf[10]) + 3; }
 
-		if((l5 <= len - 12) && ((netbuf[12] & 0xF0) == 0xE0 || (netbuf[12] & 0xF0) == 0x80))
+		if((l5 >= 0) && (l5 <= len - 12) && ((netbuf[12] & 0xF0) == 0xE0 || (netbuf[12] & 0xF0) == 0x80))
 		{
 			cl->ncd_proto = NCD_525;
 		}
-		else if((l4 <= len - 8) && ((netbuf[8] & 0xF0) == 0xE0 || (netbuf[9] & 0xF0) == 0x80))
+		else if((l4 >= 0) && (l4 <= len - 8) && ((netbuf[8] & 0xF0) == 0xE0 || (netbuf[9] & 0xF0) == 0x80))
 		{
 			cl->ncd_proto = NCD_524;
 		}
@@ -591,7 +591,7 @@ static int32_t connect_newcamd_server(void)
 	network_cmd_no_data_send(handle, &cl->ncd_msgid, MSG_CARD_DATA_REQ, key, COMMTYPE_CLIENT);
 
 	bytes_received = network_message_receive(handle, &cl->ncd_msgid, buf, key, COMMTYPE_CLIENT);
-	if(bytes_received < 16 || buf[2] != MSG_CARD_DATA)
+	if(bytes_received < 17 || buf[2] != MSG_CARD_DATA)
 	{
 		cs_log("expected MSG_CARD_DATA (%02X), received %02X", MSG_CARD_DATA, buf[2]);
 
@@ -614,6 +614,12 @@ static int32_t connect_newcamd_server(void)
 
 	cl->reader->nprov = buf[14 + 2];
 	memset(cl->reader->prid, 0x00, sizeof(cl->reader->prid));
+	if((size_t)bytes_received < 24 + (size_t)11 * cl->reader->nprov)
+	{
+		cs_log("invalid MSG_CARD_DATA provider list length");
+		network_tcp_connection_close(cl->reader, "invalid card data");
+		return -4;
+	}
 
 	for(i = 0; i < cl->reader->nprov; i++)
 	{
@@ -1337,7 +1343,7 @@ static void newcamd_send_dcw(struct s_client *client, ECM_REQUEST *er)
 {
 	int32_t len;
 	uint16_t cl_msgid;
-	uint8_t mbuf[19];
+	uint8_t mbuf[19] = {0};
 
 	if(!client->udp_fd)
 	{

@@ -40,10 +40,7 @@
 #define CS_ERROR 0
 
 extern char cs_confdir[128];
-#ifdef MODULE_STREAMRELAY
-static int8_t emu_key_data_mutex_init = 0;
-#endif
-pthread_mutex_t emu_key_data_mutex;
+pthread_mutex_t emu_key_data_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 static void set_hexserial_to_version(struct s_reader *rdr)
 {
@@ -92,7 +89,12 @@ static void emu_add_entitlement(struct s_reader *rdr, uint16_t caid, uint32_t pr
 		item->end = 2147472000;
 		item->type = 0;
 		item->isKey = 1;
-		memcpy(item->name, keyName, 8);
+		memset(item->name, 0, sizeof(item->name));
+		if(keyName)
+		{
+			size_t name_len = strnlen(keyName, sizeof(item->name));
+			memcpy(item->name, keyName, name_len);
+		}
 		item->key = key;
 		item->keyLength = keyLength;
 		item->isData = isData;
@@ -787,12 +789,6 @@ static int32_t emu_reader_init(struct s_reader *UNUSED(reader))
 		cs_log("Stream key delayer initialized");
 	}
 
-	// Initialize mutex for exclusive access to key database and key file
-	if (!emu_key_data_mutex_init)
-	{
-		SAFE_MUTEX_INIT(&emu_key_data_mutex, NULL);
-		emu_key_data_mutex_init = 1;
-	}
 #endif
 	return CR_OK;
 }

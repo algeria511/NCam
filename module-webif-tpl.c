@@ -204,6 +204,7 @@ static char *tpl_addTmp(struct templatevars *vars, char *value)
 void tpl_printf(struct templatevars *vars, uint8_t addmode, const char *varname, const char *fmtstring, ...)
 {
 	uint32_t needed;
+	if(!vars || !fmtstring) { return; }
 	char test[1];
 	va_list argptr;
 
@@ -569,6 +570,19 @@ char *tpl_getTpl(struct templatevars *vars, const char *name)
 				respos += tmp;
 				tpl = pch + 2;
 			}
+			else
+			{
+				// Token name too long (>=30 chars) or malformed/unterminated
+				if(respos + 2 >= allocated)
+				{
+					allocated = respos + 256;
+					if(!cs_realloc(&result, allocated)) { return ""; }
+				}
+				result[respos] = tpl[0];
+				result[respos + 1] = tpl[1];
+				respos += 2;
+				tpl += 2;
+			}
 		}
 		else
 		{
@@ -625,6 +639,8 @@ void tpl_checkOneDirDiskRevisions(const char *subdir)
 		{
 			int8_t error = 1;
 			char *tplorg = tpl_getUnparsedTpl(tpl->tpl_name, 0, subdir);
+			if(!tplorg)
+				continue;
 			unsigned long checksum = 0, curchecksum = crc32(0L, (uint8_t *)tpl->tpl_data, tpl->tpl_data_len);
 			char *ifdefs = "", *pch1 = strstr(tplorg, "<!--NCam");
 			if(pch1 != NULL)

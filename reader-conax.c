@@ -154,6 +154,8 @@ static int32_t conax_card_init(struct s_reader *reader, ATR *newatr)
 	uint8_t cardver = 0;
 	uint16_t card_caid = 0; // CAID override: store card's original CAID
 
+	reader->cnxlastecm = 0;
+
 	get_hist;
 	if((hist_size < 4) || (memcmp(hist, "0B00", 4)))
 		{ return ERROR; }
